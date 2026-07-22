@@ -8,6 +8,9 @@ import {
   celsiusToFahrenheit,
 } from "@grill-master/sensor";
 import { openDatabase, createCookStore } from "./db.js";
+import { loadProjectEnv } from "./loadEnv.js";
+
+loadProjectEnv();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);

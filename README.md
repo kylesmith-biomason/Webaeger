@@ -10,10 +10,11 @@ The Pi boots into Chromium **kiosk** mode (`--kiosk --app=…`) so the UI fills 
 ## Quick start (Mac development)
 
 ```bash
+cp .env.example .env   # optional; edit as needed
 npm install
-SENSOR=mock npm run start         # API + UI on :3000 (mock temps)
+npm run start          # reads .env if present (defaults to SENSOR=mock)
 # optional second terminal for hot UI reload:
-npm run dev:web                   # Vite on :5173 (proxies API)
+npm run dev:web        # Vite on :5173 (proxies API)
 ```
 
 Open `http://localhost:3000` (or `:5173`) and size the window to **800×480**.
@@ -61,6 +62,9 @@ docs/            Imaging, display, Atlas walkthroughs
 ```
 
 ## Environment
+
+Copy [`.env.example`](.env.example) to `.env` for local overrides (`.env` is gitignored).
+On the Pi, [`deploy/webaeger.service`](deploy/webaeger.service) sets production values.
 
 | Variable   | Default              | Notes                          |
 |------------|----------------------|--------------------------------|
