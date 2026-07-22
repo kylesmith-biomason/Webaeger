@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Chromium kiosk launcher for Grill Master (Pi OS Bookworm/Trixie + labwc)
+# Chromium kiosk launcher for Webaeger / Grill Master (Pi OS Bookworm/Trixie + labwc)
 set -euo pipefail
 
 URL="${GRILL_URL:-http://localhost:3000}"

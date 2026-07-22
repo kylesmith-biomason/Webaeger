@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One-time install of Grill Master + kiosk on the Raspberry Pi.
-# Usage (on Pi): sudo bash scripts/pi/install-kiosk.sh [user]
+# One-time install of Webaeger + kiosk on the Raspberry Pi.
+# Usage (on Pi, from /opt/Webaeger): sudo bash scripts/pi/install-kiosk.sh [user]
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -10,18 +10,24 @@ fi
 
 APP_USER="${1:-${SUDO_USER:-pi}}"
 APP_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
-INSTALL_DIR="/opt/grillmaster"
+INSTALL_DIR="/opt/Webaeger"
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
 echo "==> Installing to $INSTALL_DIR (user: $APP_USER)"
 
-if [[ ! -d "$INSTALL_DIR/.git" ]]; then
+if [[ "$REPO_DIR" != "$INSTALL_DIR" ]]; then
   mkdir -p "$INSTALL_DIR"
-  if [[ "$REPO_DIR" != "$INSTALL_DIR" ]]; then
-    rsync -a --exclude node_modules --exclude data --exclude .git "$REPO_DIR"/ "$INSTALL_DIR"/
+  if [[ -d "$REPO_DIR/.git" && ! -d "$INSTALL_DIR/.git" ]]; then
+    echo "==> Syncing from $REPO_DIR -> $INSTALL_DIR"
+    rsync -a --exclude node_modules --exclude data "$REPO_DIR"/ "$INSTALL_DIR"/
+  elif [[ ! -d "$INSTALL_DIR/.git" && ! -f "$INSTALL_DIR/package.json" ]]; then
+    echo "No Webaeger checkout at $INSTALL_DIR. Clone first:"
+    echo "  git clone https://github.com/kylesmith-biomason/Webaeger.git $INSTALL_DIR"
+    exit 1
   fi
-  chown -R "$APP_USER:$APP_USER" "$INSTALL_DIR"
 fi
+
+chown -R "$APP_USER:$APP_USER" "$INSTALL_DIR"
 
 # Node 20 if missing
 if ! command -v node >/dev/null 2>&1; then
@@ -41,20 +47,26 @@ chmod +x "$INSTALL_DIR/deploy/kiosk.sh"
 chmod +x "$INSTALL_DIR/scripts/"*.sh "$INSTALL_DIR/scripts/pi/"*.sh || true
 
 echo "==> systemd service"
-SERVICE_SRC="$INSTALL_DIR/deploy/grillmaster.service"
-SERVICE_DST="/etc/systemd/system/grillmaster.service"
+SERVICE_SRC="$INSTALL_DIR/deploy/webaeger.service"
+SERVICE_DST="/etc/systemd/system/webaeger.service"
 sed "s/REPLACE_USER/${APP_USER}/g" "$SERVICE_SRC" > "$SERVICE_DST"
 
+# Remove old unit name if present from earlier installs
+systemctl disable --now grillmaster.service 2>/dev/null || true
+rm -f /etc/systemd/system/grillmaster.service
+
 systemctl daemon-reload
-systemctl enable grillmaster.service
-systemctl restart grillmaster.service
+systemctl enable webaeger.service
+systemctl restart webaeger.service
 
 echo "==> labwc kiosk autostart"
 mkdir -p "$APP_HOME/.config/labwc"
 AUTOSTART="$APP_HOME/.config/labwc/autostart"
 touch "$AUTOSTART"
-if ! grep -q "grillmaster/deploy/kiosk.sh" "$AUTOSTART" 2>/dev/null; then
-  echo "/opt/grillmaster/deploy/kiosk.sh &" >> "$AUTOSTART"
+# Drop old path if present
+sed -i '\#/opt/grillmaster/deploy/kiosk.sh#d' "$AUTOSTART" 2>/dev/null || true
+if ! grep -q "/opt/Webaeger/deploy/kiosk.sh" "$AUTOSTART" 2>/dev/null; then
+  echo "/opt/Webaeger/deploy/kiosk.sh &" >> "$AUTOSTART"
 fi
 chown -R "$APP_USER:$APP_USER" "$APP_HOME/.config"
 

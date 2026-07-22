@@ -1,6 +1,9 @@
-# Grill Master
+# Grill Master ([Webaeger](https://github.com/kylesmith-biomason/Webaeger))
 
 Local grilling temperature kiosk for Raspberry Pi 4 + Hosyond 5" DSI (800×480) + Atlas Scientific Isolated HAT / EZO-RTD.
+
+Repo: [kylesmith-biomason/Webaeger](https://github.com/kylesmith-biomason/Webaeger)  
+Pi install path: `/opt/Webaeger`
 
 The Pi boots into Chromium **kiosk** mode (`--kiosk --app=…`) so the UI fills the screen with no browser chrome.
 
@@ -8,9 +11,9 @@ The Pi boots into Chromium **kiosk** mode (`--kiosk --app=…`) so the UI fills 
 
 ```bash
 npm install
-SENSOR=mock npm run dev          # API + mock temps on :3000
+SENSOR=mock npm run start         # API + UI on :3000 (mock temps)
 # optional second terminal for hot UI reload:
-npm run dev:web                  # Vite on :5173 (proxies API)
+npm run dev:web                   # Vite on :5173 (proxies API)
 ```
 
 Open `http://localhost:3000` (or `:5173`) and size the window to **800×480**.
@@ -20,17 +23,21 @@ Open `http://localhost:3000` (or `:5173`) and size the window to **800×480**.
 1. Image the Pi — [docs/01-imaging.md](docs/01-imaging.md)
 2. Confirm the display — [docs/02-display.md](docs/02-display.md)
 3. Seat Atlas HAT / EZO-RTD — [docs/03-atlas-rtd.md](docs/03-atlas-rtd.md)
-4. Push this repo to GitHub, then from your Mac:
+4. Clone on the Pi (if not already):
 
 ```bash
-PI_HOST=you@grillmaster.local ./scripts/bootstrap-pi.sh git@github.com:YOU/grill-master.git
-ssh you@grillmaster.local 'sudo reboot'
+sudo mkdir -p /opt/Webaeger
+sudo chown "$USER:$USER" /opt/Webaeger
+git clone https://github.com/kylesmith-biomason/Webaeger.git /opt/Webaeger
+cd /opt/Webaeger
+sudo bash scripts/pi/install-kiosk.sh
 ```
 
-Or on the Pi after cloning to `/opt/grillmaster`:
+Or from your Mac:
 
 ```bash
-sudo bash scripts/pi/install-kiosk.sh
+PI_HOST=you@grillmaster.local ./scripts/bootstrap-pi.sh https://github.com/kylesmith-biomason/Webaeger.git
+ssh you@grillmaster.local 'sudo reboot'
 ```
 
 ## Deploy updates
@@ -39,6 +46,8 @@ sudo bash scripts/pi/install-kiosk.sh
 git push
 PI_HOST=you@grillmaster.local ./scripts/deploy.sh
 ```
+
+`deploy.sh` pulls in `/opt/Webaeger` and restarts the `webaeger` systemd service.
 
 ## Layout
 

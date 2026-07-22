@@ -29,9 +29,10 @@ sudo i2cdetect -y 1
 You should see `66` in the grid. Or run:
 
 ```bash
+cd /opt/Webaeger
 bash scripts/pi/verify-rtd.sh
 ```
 
 ## App sensor mode
 
-On the Pi, the server uses the real I2C sensor when `SENSOR=rtd` (default in the systemd unit). On your Mac, use `SENSOR=mock`.
+On the Pi, the server uses the real I2C sensor when `SENSOR=rtd` (default in the `webaeger` systemd unit). On your Mac, use `SENSOR=mock`.

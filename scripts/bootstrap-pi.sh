@@ -1,26 +1,22 @@
 #!/usr/bin/env bash
-# Bootstrap the repo onto a Pi that already has SSH access.
+# Bootstrap Webaeger onto a Pi that already has SSH access.
 # Usage from Mac (after imaging):
-#   ./scripts/bootstrap-pi.sh git@github.com:YOU/grill-master.git
+#   ./scripts/bootstrap-pi.sh https://github.com/kylesmith-biomason/Webaeger.git
 #   PI_HOST=user@grillmaster.local ./scripts/bootstrap-pi.sh <git-url>
 set -euo pipefail
 
 PI_HOST="${PI_HOST:-kyle@grillmaster.local}"
-GIT_URL="${1:-}"
-
-if [[ -z "$GIT_URL" ]]; then
-  echo "Usage: PI_HOST=user@host ./scripts/bootstrap-pi.sh <git-clone-url>"
-  exit 1
-fi
+GIT_URL="${1:-https://github.com/kylesmith-biomason/Webaeger.git}"
+INSTALL_DIR="/opt/Webaeger"
 
 ssh "$PI_HOST" bash -s <<EOF
 set -euo pipefail
-sudo mkdir -p /opt/grillmaster
-sudo chown "\$USER:\$USER" /opt/grillmaster
-if [[ ! -d /opt/grillmaster/.git ]]; then
-  git clone "${GIT_URL}" /opt/grillmaster
+sudo mkdir -p "${INSTALL_DIR}"
+sudo chown "\$USER:\$USER" "${INSTALL_DIR}"
+if [[ ! -d "${INSTALL_DIR}/.git" ]]; then
+  git clone "${GIT_URL}" "${INSTALL_DIR}"
 fi
-cd /opt/grillmaster
+cd "${INSTALL_DIR}"
 sudo bash scripts/pi/configure-os.sh
 sudo bash scripts/pi/configure-display.sh || true
 bash scripts/pi/verify-rtd.sh || true

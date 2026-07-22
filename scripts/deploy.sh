@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Deploy latest Grill Master to the Pi from your Mac.
+# Deploy latest Webaeger to the Pi from your Mac.
 # Usage:
 #   ./scripts/deploy.sh
 #   PI_HOST=kyle@grillmaster.local ./scripts/deploy.sh
 set -euo pipefail
 
 PI_HOST="${PI_HOST:-kyle@grillmaster.local}"
-REMOTE_DIR="${REMOTE_DIR:-/opt/grillmaster}"
+REMOTE_DIR="${REMOTE_DIR:-/opt/Webaeger}"
 
 echo "==> Deploying to ${PI_HOST}:${REMOTE_DIR}"
 
@@ -21,6 +21,6 @@ else
 fi
 npm ci
 npm run build
-sudo systemctl restart grillmaster
+sudo systemctl restart webaeger
 echo "Deploy complete."
 EOF

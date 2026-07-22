@@ -43,7 +43,7 @@ In `raspi-config`:
 Or apply the same settings non-interactively:
 
 ```bash
-# From this repo on the Pi after clone, or copy scripts/pi/
+# From this repo on the Pi after clone to /opt/Webaeger:
 sudo bash scripts/pi/configure-os.sh
 ```
 
@@ -51,6 +51,15 @@ Reboot when finished:
 
 ```bash
 sudo reboot
+```
+
+## Clone the Webaeger repo (on the Pi)
+
+```bash
+sudo mkdir -p /opt/Webaeger
+sudo chown "$USER:$USER" /opt/Webaeger
+git clone https://github.com/kylesmith-biomason/Webaeger.git /opt/Webaeger
+cd /opt/Webaeger
 ```
 
 ## Verify SSH from your Mac

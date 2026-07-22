@@ -1,17 +1,17 @@
 [Unit]
-Description=Grill Master temperature server
+Description=Webaeger (Grill Master) temperature server
 After=network.target
 
 [Service]
 Type=simple
 User=REPLACE_USER
-WorkingDirectory=/opt/grillmaster
+WorkingDirectory=/opt/Webaeger
 Environment=NODE_ENV=production
 Environment=SENSOR=rtd
 Environment=PORT=3000
 Environment=POLL_MS=30000
 Environment=TEMP_UNIT=F
-Environment=DB_PATH=/opt/grillmaster/data/grillmaster.db
+Environment=DB_PATH=/opt/Webaeger/data/grillmaster.db
 ExecStart=/usr/bin/npm run start --workspace=@grill-master/server
 Restart=always
 RestartSec=3

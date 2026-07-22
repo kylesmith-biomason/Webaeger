@@ -1,4 +1,4 @@
-# Grill Master kiosk autostart — append or merge into ~/.config/labwc/autostart
+# Webaeger kiosk autostart — append or merge into ~/.config/labwc/autostart
 # Installed by scripts/pi/install-kiosk.sh
 
-/opt/grillmaster/deploy/kiosk.sh &
+/opt/Webaeger/deploy/kiosk.sh &
