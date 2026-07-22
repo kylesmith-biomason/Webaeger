@@ -99,19 +99,23 @@ button {
 .temp-wrap {
   text-align: center;
   animation: rise 800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  overflow: visible;
 }
 
 .temp {
   font-family: var(--font-display);
-  font-size: clamp(6.5rem, 28vw, 9rem);
-  line-height: 0.9;
+  font-size: clamp(8rem, 36vw, 12rem);
+  line-height: 1.05;
   letter-spacing: 0.02em;
   margin: 0;
-  background: linear-gradient(180deg, #fff8f1 10%, #ffb27a 70%, var(--ember) 100%);
+  padding: 0.06em 0.04em 0.02em;
+  overflow: visible;
+  background: linear-gradient(180deg, #fff8f1 0%, #ffb27a 55%, var(--ember) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 0 40px rgba(255, 106, 26, 0.15);
+  /* Avoid text-shadow with clipped text — causes a hard black edge in Chromium */
+  filter: drop-shadow(0 0 28px rgba(255, 106, 26, 0.35));
 }
 
 .temp-unit {
