@@ -1,0 +1,17 @@
+{
+  "name": "@grill-master/server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "build": "node -e \"console.log('server: no build step')\"",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@grill-master/sensor": "*",
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "i2c-bus": "^5.2.3",
+    "ws": "^8.18.0"
+  }
+}
