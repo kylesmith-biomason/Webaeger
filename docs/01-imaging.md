@@ -62,6 +62,13 @@ git clone https://github.com/kylesmith-biomason/Webaeger.git /opt/Webaeger
 cd /opt/Webaeger
 ```
 
+If Git complains about **dubious ownership**:
+
+```bash
+sudo chown -R "$USER:$USER" /opt/Webaeger
+git config --global --add safe.directory /opt/Webaeger
+```
+
 ## Verify SSH from your Mac
 
 ```bash

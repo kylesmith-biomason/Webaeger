@@ -29,6 +29,11 @@ fi
 
 chown -R "$APP_USER:$APP_USER" "$INSTALL_DIR"
 
+# Avoid "dubious ownership" when git is run as a different user than the dir owner
+sudo -u "$APP_USER" git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
+
+
 # Node 20 if missing
 if ! command -v node >/dev/null 2>&1; then
   echo "==> Installing Node.js 20"

@@ -17,6 +17,7 @@ if [[ ! -d "${INSTALL_DIR}/.git" ]]; then
   git clone "${GIT_URL}" "${INSTALL_DIR}"
 fi
 cd "${INSTALL_DIR}"
+git config --global --add safe.directory "${INSTALL_DIR}" 2>/dev/null || true
 sudo bash scripts/pi/configure-os.sh
 sudo bash scripts/pi/configure-display.sh || true
 bash scripts/pi/verify-rtd.sh || true
