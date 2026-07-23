@@ -1,6 +1,6 @@
 /**
  * Temperature sensor adapters for Grill Master.
- * - mock: sinusoidal grill-like temps for Mac development
+ * - mock: ramps 100–200°F by 1° each poll (then back down)
  * - rtd: Atlas Scientific EZO-RTD over I2C (Pi)
  */
 
@@ -13,25 +13,35 @@ export function createSensor(options = {}) {
     });
   }
   return new MockSensor({
-    baseF: Number(options.baseF ?? 225),
-    amplitudeF: Number(options.amplitudeF ?? 15),
+    minF: Number(options.minF ?? 100),
+    maxF: Number(options.maxF ?? 200),
+    stepF: Number(options.stepF ?? 1),
   });
 }
 
+/**
+ * Mock: ramp °F from min→max→min by `stepF` on every read (each poll).
+ */
 export class MockSensor {
-  constructor({ baseF = 225, amplitudeF = 15 } = {}) {
-    this.baseF = baseF;
-    this.amplitudeF = amplitudeF;
-    this.startedAt = Date.now();
+  constructor({ minF = 100, maxF = 200, stepF = 1 } = {}) {
+    this.minF = minF;
+    this.maxF = maxF;
+    this.stepF = stepF;
+    this.currentF = minF;
+    this.direction = 1;
   }
 
   async readCelsius() {
-    const t = (Date.now() - this.startedAt) / 1000;
-    const f =
-      this.baseF +
-      this.amplitudeF * Math.sin(t / 40) +
-      (Math.random() - 0.5) * 1.2;
-    return fahrenheitToCelsius(f);
+    const valueF = this.currentF;
+    this.currentF += this.direction * this.stepF;
+    if (this.currentF >= this.maxF) {
+      this.currentF = this.maxF;
+      this.direction = -1;
+    } else if (this.currentF <= this.minF) {
+      this.currentF = this.minF;
+      this.direction = 1;
+    }
+    return fahrenheitToCelsius(valueF);
   }
 
   async close() {}

@@ -12,6 +12,8 @@ Environment=PORT=3000
 Environment=POLL_MS=30000
 Environment=TEMP_UNIT=F
 Environment=DB_PATH=/opt/Webaeger/data/grillmaster.db
+# Optional: force QR / phone URL (otherwise auto-detects LAN IP)
+# Environment=PUBLIC_URL=http://192.168.1.133:3000
 ExecStart=/usr/bin/npm run start --workspace=@grill-master/server
 Restart=always
 RestartSec=3

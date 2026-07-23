@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useGrillSocket } from "./useGrillSocket.js";
 import { TempChart } from "./TempChart.jsx";
+import { QrShareOverlay } from "./QrShareOverlay.jsx";
 
 function formatClock(iso) {
   if (!iso) return "";
@@ -10,12 +11,51 @@ function formatClock(iso) {
   });
 }
 
+function toDisplayTemp(celsius, unit) {
+  return unit === "C" ? celsius : (celsius * 9) / 5 + 32;
+}
+
+/** Average °/min ramp over the last 5 minutes of readings. */
+function fiveMinuteRamp(readings, unit) {
+  if (!readings?.length || readings.length < 2) return null;
+
+  const latestMs = new Date(readings[readings.length - 1].recordedAt).getTime();
+  if (!Number.isFinite(latestMs)) return null;
+  const cutoff = latestMs - 5 * 60 * 1000;
+
+  const window = readings.filter((r) => {
+    const t = new Date(r.recordedAt).getTime();
+    return Number.isFinite(t) && t >= cutoff;
+  });
+  if (window.length < 2) return null;
+
+  const first = window[0];
+  const last = window[window.length - 1];
+  const t0 = new Date(first.recordedAt).getTime();
+  const t1 = new Date(last.recordedAt).getTime();
+  const dtMin = (t1 - t0) / 60000;
+  if (dtMin < 0.05) return null;
+
+  const v0 = toDisplayTemp(first.celsius, unit);
+  const v1 = toDisplayTemp(last.celsius, unit);
+  if (!Number.isFinite(v0) || !Number.isFinite(v1)) return null;
+
+  return (v1 - v0) / dtMin;
+}
+
+function formatRamp(rampPerMin, unit) {
+  if (rampPerMin == null || !Number.isFinite(rampPerMin)) return "—";
+  const sign = rampPerMin > 0 ? "+" : "";
+  return `${sign}${rampPerMin.toFixed(1)}°${unit}/min`;
+}
+
 export default function App() {
   const { latest, connected } = useGrillSocket();
   const [view, setView] = useState("live"); // live | graph
   const [activeCook, setActiveCook] = useState(null);
   const [detail, setDetail] = useState(null);
   const [naming, setNaming] = useState(false);
+  const [showQr, setShowQr] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -62,6 +102,11 @@ export default function App() {
     return "Live";
   }, [connected, hasError]);
 
+  const rampPerMin = useMemo(
+    () => fiveMinuteRamp(detail?.readings, unit),
+    [detail?.readings, unit]
+  );
+
   async function startCook() {
     setBusy(true);
     try {
@@ -97,15 +142,46 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="top">
-        <div className="brand">
-          Grill <span>Master</span>
-        </div>
-        <div
-          className={`status ${hasError ? "err" : connected ? "live" : ""}`}
-        >
-          {statusLabel}
-        </div>
+      <header className={`top ${view === "graph" ? "top-graph" : ""}`}>
+        {view === "graph" ? (
+          <>
+            <button
+              type="button"
+              className="graph-cook-name brand-hit"
+              aria-label="Show phone QR code"
+              onClick={() => setShowQr(true)}
+            >
+              {activeCook?.name || "Temperature"}
+            </button>
+            <div className="graph-ramp" title="Average temp change over the last 5 minutes">
+              <span className="graph-ramp-value">
+                {formatRamp(rampPerMin, unit)}
+              </span>
+              <span className="graph-ramp-label">5 min avg</span>
+            </div>
+            <div
+              className={`status ${hasError ? "err" : connected ? "live" : ""}`}
+            >
+              {statusLabel}
+            </div>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="brand brand-hit"
+              aria-label="Show phone QR code"
+              onClick={() => setShowQr(true)}
+            >
+              Traeger
+            </button>
+            <div
+              className={`status ${hasError ? "err" : connected ? "live" : ""}`}
+            >
+              {statusLabel}
+            </div>
+          </>
+        )}
       </header>
 
       {view === "live" ? (
@@ -164,15 +240,10 @@ export default function App() {
       ) : (
         <>
           <main className="stage stage-graph">
-            <div className="graph-header">
-              <div className="graph-title">
-                {activeCook?.name || "Temperature"}
-              </div>
-              <div className="graph-sub">
-                {detail?.readings?.length
-                  ? `${detail.readings.length} readings`
-                  : "No readings yet"}
-              </div>
+            <div className="graph-sub-bar">
+              {detail?.readings?.length
+                ? `${detail.readings.length} readings`
+                : "No readings yet"}
             </div>
             <div className="graph-body">
               {detail?.readings?.length ? (
@@ -235,6 +306,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {showQr && <QrShareOverlay onClose={() => setShowQr(false)} />}
     </div>
   );
 }

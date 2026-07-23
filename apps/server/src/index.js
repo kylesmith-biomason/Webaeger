@@ -9,6 +9,7 @@ import {
 } from "@grill-master/sensor";
 import { openDatabase, createCookStore } from "./db.js";
 import { loadProjectEnv } from "./loadEnv.js";
+import { resolvePublicUrl } from "./publicUrl.js";
 
 loadProjectEnv();
 
@@ -16,6 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
 const POLL_MS = Number(process.env.POLL_MS || 30000);
 const UNIT = (process.env.TEMP_UNIT || "F").toUpperCase();
+const PUBLIC_URL = resolvePublicUrl(PORT);
 
 const db = openDatabase();
 const cooks = createCookStore(db);
@@ -65,6 +67,7 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     sensor: process.env.SENSOR || "mock",
     unit: UNIT,
+    publicUrl: PUBLIC_URL,
   });
 });
 
@@ -193,7 +196,7 @@ pollSensor();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `Grill Master listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"})`
+    `Grill Master listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"}, PUBLIC_URL=${PUBLIC_URL})`
   );
 });
 
