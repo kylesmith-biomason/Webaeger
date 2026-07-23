@@ -3,6 +3,9 @@ import { useGrillSocket } from "./useGrillSocket.js";
 import { TempChart } from "./TempChart.jsx";
 import { QrShareOverlay } from "./QrShareOverlay.jsx";
 
+const CHANNEL_KEY = "traeger.selectedChannel";
+const GRAPH_CHANNELS_KEY = "traeger.graphChannels";
+
 function formatClock(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleTimeString(undefined, {
@@ -43,10 +46,33 @@ function fiveMinuteRamp(readings, unit) {
   return (v1 - v0) / dtMin;
 }
 
-function formatRamp(rampPerMin, unit) {
+function formatRamp(rampPerMin) {
   if (rampPerMin == null || !Number.isFinite(rampPerMin)) return "—";
   const sign = rampPerMin > 0 ? "+" : "";
-  return `${sign}${rampPerMin.toFixed(1)}°${unit}/min`;
+  return `${sign}${rampPerMin.toFixed(1)}°/min`;
+}
+
+function readStoredChannel() {
+  try {
+    const raw = localStorage.getItem(CHANNEL_KEY);
+    if (raw == null) return 0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function readStoredGraphChannels(fallbackIds) {
+  try {
+    const raw = localStorage.getItem(GRAPH_CHANNELS_KEY);
+    if (!raw) return new Set(fallbackIds);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return new Set(fallbackIds);
+    return new Set(parsed.map(Number).filter(Number.isFinite));
+  } catch {
+    return new Set(fallbackIds);
+  }
 }
 
 export default function App() {
@@ -55,9 +81,63 @@ export default function App() {
   const [activeCook, setActiveCook] = useState(null);
   const [detail, setDetail] = useState(null);
   const [naming, setNaming] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [channelId, setChannelId] = useState(readStoredChannel);
+  const [graphChannels, setGraphChannels] = useState(() => new Set());
+
+  const probes = latest?.probes?.length
+    ? latest.probes
+    : latest?.channels?.map((c) => ({ id: c.id, label: c.label })) || [
+        { id: 0, label: "Pit" },
+        { id: 1, label: "Meat" },
+      ];
+
+  useEffect(() => {
+    if (!probes.some((p) => p.id === channelId)) {
+      setChannelId(probes[0]?.id ?? 0);
+    }
+  }, [probes, channelId]);
+
+  useEffect(() => {
+    if (graphChannels.size > 0) return;
+    const ids = probes.map((p) => p.id);
+    setGraphChannels(readStoredGraphChannels(ids));
+  }, [probes, graphChannels.size]);
+
+  function selectChannel(id) {
+    setChannelId(id);
+    try {
+      localStorage.setItem(CHANNEL_KEY, String(id));
+    } catch {
+      // ignore
+    }
+  }
+
+  function toggleGraphChannel(id) {
+    setGraphChannels((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        if (next.size > 1) next.delete(id);
+      } else {
+        next.add(id);
+      }
+      try {
+        localStorage.setItem(GRAPH_CHANNELS_KEY, JSON.stringify([...next]));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    selectChannel(id);
+  }
+
+  const activeChannel = useMemo(() => {
+    const list = latest?.channels || [];
+    return list.find((c) => c.id === channelId) || list[0] || null;
+  }, [latest?.channels, channelId]);
 
   const refreshActive = useCallback(async () => {
     const res = await fetch("/api/cooks");
@@ -81,7 +161,9 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    fetch(`/api/cooks/${activeCook.id}`)
+    const query =
+      view === "graph" ? "channel=all" : `channel=${channelId}`;
+    fetch(`/api/cooks/${activeCook.id}?${query}`)
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) setDetail(data);
@@ -90,11 +172,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeCook?.id, latest?.readingId, view]);
+  }, [activeCook?.id, latest?.readingId, view, channelId]);
 
-  const displayTemp = latest?.display;
-  const unit = latest?.unit || "F";
-  const hasError = Boolean(latest?.error);
+  const displayTemp = activeChannel?.display;
+  const unit = activeChannel?.unit || latest?.unit || "F";
+  const hasError = Boolean(activeChannel?.error);
 
   const statusLabel = useMemo(() => {
     if (!connected) return "Reconnecting";
@@ -102,9 +184,30 @@ export default function App() {
     return "Live";
   }, [connected, hasError]);
 
+  const graphSeries = useMemo(() => {
+    const all = detail?.readings || [];
+    const selected =
+      graphChannels.size > 0
+        ? graphChannels
+        : new Set(probes.map((p) => p.id));
+    return probes
+      .filter((p) => selected.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        label: p.label,
+        readings: all.filter((r) => (r.channel ?? 0) === p.id),
+      }))
+      .filter((s) => s.readings.length > 0);
+  }, [detail?.readings, graphChannels, probes]);
+
+  const rampReadings = useMemo(() => {
+    const all = detail?.readings || [];
+    return all.filter((r) => (r.channel ?? 0) === channelId);
+  }, [detail?.readings, channelId]);
+
   const rampPerMin = useMemo(
-    () => fiveMinuteRamp(detail?.readings, unit),
-    [detail?.readings, unit]
+    () => fiveMinuteRamp(rampReadings, unit),
+    [rampReadings, unit]
   );
 
   async function startCook() {
@@ -134,15 +237,57 @@ export default function App() {
       await fetch("/api/cooks/stop", { method: "POST" });
       setActiveCook(null);
       setDetail(null);
+      setConfirmingEnd(false);
       await refreshActive();
     } finally {
       setBusy(false);
     }
   }
 
+  const liveChannelToggle =
+    probes.length > 1 ? (
+      <div className="channel-toggle" role="tablist" aria-label="Probe channel">
+        {probes.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="tab"
+            aria-selected={channelId === p.id}
+            className={`channel-btn ${channelId === p.id ? "active" : ""}`}
+            onClick={() => selectChannel(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
+  const graphChannelToggle =
+    probes.length > 1 ? (
+      <div
+        className="channel-toggle"
+        role="group"
+        aria-label="Graph probe channels"
+      >
+        {probes.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            aria-pressed={graphChannels.has(p.id)}
+            className={`channel-btn ${graphChannels.has(p.id) ? "active" : ""}`}
+            onClick={() => toggleGraphChannel(p.id)}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    ) : null;
+
   return (
     <div className="app">
-      <header className={`top ${view === "graph" ? "top-graph" : ""}`}>
+      <header
+        className={`top ${view === "graph" ? "top-graph" : "top-live"}`}
+      >
         {view === "graph" ? (
           <>
             <button
@@ -153,12 +298,7 @@ export default function App() {
             >
               {activeCook?.name || "Temperature"}
             </button>
-            <div className="graph-ramp" title="Average temp change over the last 5 minutes">
-              <span className="graph-ramp-value">
-                {formatRamp(rampPerMin, unit)}
-              </span>
-              <span className="graph-ramp-label">5 min avg</span>
-            </div>
+            {graphChannelToggle}
             <div
               className={`status ${hasError ? "err" : connected ? "live" : ""}`}
             >
@@ -175,6 +315,7 @@ export default function App() {
             >
               Traeger
             </button>
+            {liveChannelToggle}
             <div
               className={`status ${hasError ? "err" : connected ? "live" : ""}`}
             >
@@ -214,7 +355,7 @@ export default function App() {
                 <button
                   className="btn btn-ghost"
                   disabled={busy}
-                  onClick={stopCook}
+                  onClick={() => setConfirmingEnd(true)}
                 >
                   End cook
                 </button>
@@ -240,15 +381,21 @@ export default function App() {
       ) : (
         <>
           <main className="stage stage-graph">
-            <div className="graph-sub-bar">
-              {detail?.readings?.length
-                ? `${detail.readings.length} readings`
-                : "No readings yet"}
+            <div className="graph-sub-bar graph-sub-bar-row">
+              <div
+                className="graph-ramp"
+                title="Average temp change over the last 5 minutes"
+              >
+                <span className="graph-ramp-value">
+                  {formatRamp(rampPerMin)}
+                </span>
+                <span className="graph-ramp-label">5 min avg</span>
+              </div>
             </div>
             <div className="graph-body">
-              {detail?.readings?.length ? (
+              {graphSeries.length ? (
                 <TempChart
-                  readings={detail.readings}
+                  series={graphSeries}
                   unit={unit}
                   width={720}
                   height={280}
@@ -265,7 +412,10 @@ export default function App() {
 
           <footer className="bottom bottom-live">
             <div className="actions">
-              <button className="btn btn-primary" onClick={() => setView("live")}>
+              <button
+                className="btn btn-primary"
+                onClick={() => setView("live")}
+              >
                 Live temp
               </button>
             </div>
@@ -301,6 +451,35 @@ export default function App() {
                 onClick={startCook}
               >
                 Start
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmingEnd && (
+        <div className="overlay" role="dialog" aria-modal="true">
+          <div className="sheet">
+            <h2>End this cook?</h2>
+            <p>
+              {activeCook?.name
+                ? `Stop recording “${activeCook.name}”. You can still view the graph history.`
+                : "Stop recording temperatures for this cook."}
+            </p>
+            <div className="sheet-actions">
+              <button
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={() => setConfirmingEnd(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={stopCook}
+              >
+                End cook
               </button>
             </div>
           </div>

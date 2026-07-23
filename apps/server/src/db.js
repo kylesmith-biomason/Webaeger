@@ -12,6 +12,8 @@ export function openDatabase(dbPath = process.env.DB_PATH) {
   fs.mkdirSync(path.dirname(resolved), { recursive: true });
   const db = new Database(resolved);
   db.pragma("journal_mode = WAL");
+
+  // Base schema (compatible with DBs created before multi-channel)
   db.exec(`
     CREATE TABLE IF NOT EXISTS cooks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,10 +30,22 @@ export function openDatabase(dbPath = process.env.DB_PATH) {
       celsius REAL NOT NULL,
       FOREIGN KEY (cook_id) REFERENCES cooks(id) ON DELETE CASCADE
     );
+  `);
 
+  // Migrate older DBs / add channel for multi-probe support
+  const cols = db.prepare(`PRAGMA table_info(readings)`).all();
+  if (!cols.some((c) => c.name === "channel")) {
+    db.exec(
+      `ALTER TABLE readings ADD COLUMN channel INTEGER NOT NULL DEFAULT 0`
+    );
+  }
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_readings_cook_id ON readings(cook_id);
     CREATE INDEX IF NOT EXISTS idx_readings_recorded_at ON readings(recorded_at);
+    CREATE INDEX IF NOT EXISTS idx_readings_cook_channel ON readings(cook_id, channel);
   `);
+
   return db;
 }
 
@@ -57,10 +71,16 @@ export function createCookStore(db) {
      LIMIT ?`
   );
   const insertReading = db.prepare(
-    `INSERT INTO readings (cook_id, recorded_at, celsius) VALUES (?, ?, ?)`
+    `INSERT INTO readings (cook_id, channel, recorded_at, celsius) VALUES (?, ?, ?, ?)`
   );
   const listReadings = db.prepare(
-    `SELECT id, cook_id, recorded_at, celsius
+    `SELECT id, cook_id, channel, recorded_at, celsius
+     FROM readings
+     WHERE cook_id = ? AND channel = ?
+     ORDER BY recorded_at ASC`
+  );
+  const listReadingsAll = db.prepare(
+    `SELECT id, cook_id, channel, recorded_at, celsius
      FROM readings
      WHERE cook_id = ?
      ORDER BY recorded_at ASC`
@@ -99,19 +119,24 @@ export function createCookStore(db) {
       return listCooks.all(limit);
     },
 
-    addReading(cookId, celsius) {
+    addReading(cookId, celsius, channel = 0) {
       const recordedAt = new Date().toISOString();
-      const info = insertReading.run(cookId, recordedAt, celsius);
+      const info = insertReading.run(cookId, channel, recordedAt, celsius);
       return {
         id: Number(info.lastInsertRowid),
         cook_id: cookId,
+        channel,
         recorded_at: recordedAt,
         celsius,
       };
     },
 
-    getReadings(cookId) {
-      return listReadings.all(cookId);
+    getReadings(cookId, channel = 0) {
+      return listReadings.all(cookId, channel);
+    },
+
+    getAllReadings(cookId) {
+      return listReadingsAll.all(cookId);
     },
   };
 }

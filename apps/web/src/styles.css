@@ -57,9 +57,24 @@ button {
 
 .top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.top-live {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-live .channel-toggle {
+  justify-self: center;
+}
+
+.top-live .status {
+  justify-self: end;
 }
 
 .top-graph {
@@ -67,6 +82,10 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 8px;
+}
+
+.top-graph .channel-toggle {
+  justify-self: center;
 }
 
 .top-graph .status {
@@ -162,6 +181,47 @@ button {
   text-align: center;
   animation: rise 800ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   overflow: visible;
+}
+
+.channel-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+}
+
+.channel-btn {
+  min-height: 34px;
+  min-width: 72px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ash);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.channel-btn.active {
+  background: linear-gradient(180deg, #ff7a2e, var(--ember-dim));
+  color: #1a0d05;
+  box-shadow: 0 4px 14px rgba(255, 106, 26, 0.28);
+}
+
+.graph-sub-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.graph-sub-bar-row .channel-toggle {
+  transform: scale(0.92);
+  transform-origin: center;
 }
 
 .temp {
@@ -288,11 +348,12 @@ button {
   transform: translate(calc(-100% - 12px), -110%);
 }
 
-.chart-tooltip-temp {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  letter-spacing: 0.04em;
-  color: #fff8f1;
+.chart-tooltip-series {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fog);
+  margin-bottom: 2px;
 }
 
 .chart-tooltip-time {

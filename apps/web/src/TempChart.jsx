@@ -10,7 +10,6 @@ function formatHm(date) {
   return `${hh}:${mm}`;
 }
 
-/** Even time steps so ~4–6 labels fit the cook duration. */
 function chooseStepMinutes(spanMs, maxTicks = 5) {
   const spanMin = Math.max(spanMs / 60000, 1);
   const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720];
@@ -25,9 +24,6 @@ function floorToStepMs(timeMs, stepMinutes) {
   return Math.floor(timeMs / stepMs) * stepMs;
 }
 
-/**
- * Build HH:MM ticks on an even grid, then drop any that sit too close in pixels.
- */
 function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
   const stepMs = stepMinutes * 60 * 1000;
   let t = floorToStepMs(tMin, stepMinutes);
@@ -38,7 +34,6 @@ function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
     candidates.push({ time: t, label: formatHm(new Date(t)) });
   }
 
-  // Always consider true endpoints so short cooks still show a range
   const start = { time: tMin, label: formatHm(new Date(tMin)) };
   const end = { time: tMax, label: formatHm(new Date(tMax)) };
   if (!candidates.length || candidates[0].time - tMin > stepMs * 0.5) {
@@ -51,7 +46,6 @@ function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
     candidates.push(end);
   }
 
-  // Deduplicate identical labels that would stack
   const unique = [];
   for (const tick of candidates) {
     if (unique.length && unique[unique.length - 1].label === tick.label) {
@@ -62,7 +56,6 @@ function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
 
   if (unique.length <= 2) return unique;
 
-  // Keep endpoints; thin middle ticks by minimum pixel gap
   const first = unique[0];
   const last = unique[unique.length - 1];
   const middle = unique.slice(1, -1);
@@ -80,14 +73,12 @@ function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
   } else if (kept.length === 1) {
     kept.push(last);
   } else {
-    // Replace last middle with true end so the axis still shows the range
     kept[kept.length - 1] = last;
   }
 
   return kept;
 }
 
-/** Even ° steps aiming for about 5 labels across the zoomed range. */
 function chooseTempStep(range) {
   const rough = Math.max(range, 1) / 5;
   const candidates = [1, 2, 5, 10, 15, 20, 25, 50, 100];
@@ -109,13 +100,11 @@ function buildTempTicks(yMin, yMax, step) {
   if (ticks[ticks.length - 1] !== yMax) {
     ticks.push(Number(yMax.toFixed(4)));
   }
-  // Dedupe near-duplicates from float noise
   return ticks.filter(
     (v, i, arr) => i === 0 || Math.abs(v - arr[i - 1]) > step * 0.01
   );
 }
 
-/** Zoom Y domain to data with ~8% margin, snapped to nice tick steps. */
 function niceTempDomain(dataMin, dataMax) {
   const span = Math.max(dataMax - dataMin, 1);
   const margin = Math.max(span * 0.08, 2);
@@ -128,10 +117,6 @@ function niceTempDomain(dataMin, dataMax) {
   return { yMin: lo, yMax: hi, tempStep: step };
 }
 
-/**
- * Whittaker–Eilers smoother (2nd-order). Larger λ → smoother curve.
- * Display-only; does not change stored readings.
- */
 function whittakerSmooth(values, lambda = 40) {
   const n = values.length;
   if (n < 3 || lambda <= 0) return values.slice();
@@ -177,16 +162,41 @@ function whittakerSmooth(values, lambda = 40) {
 
 const SMOOTH_LAMBDA = 40;
 
+const SERIES_COLORS = [
+  { stroke: "rgba(255,106,26,0.95)", glow: "rgba(255,180,120,0.22)", dot: "#ff6a1a" },
+  { stroke: "rgba(126,200,227,0.95)", glow: "rgba(126,200,227,0.22)", dot: "#7ec8e3" },
+  { stroke: "rgba(126,207,138,0.95)", glow: "rgba(126,207,138,0.22)", dot: "#7ecf8a" },
+];
+
+function buildSeriesPoints(readings, unit, smoothLambda) {
+  const pointsData = readings
+    .map((r) => ({
+      time: new Date(r.recordedAt).getTime(),
+      value: toDisplay(r.celsius, unit),
+    }))
+    .filter(
+      (p) => Number.isFinite(p.time) && Number.isFinite(p.value) && p.value >= 0
+    )
+    .sort((a, b) => a.time - b.time);
+
+  if (!pointsData.length) return null;
+
+  const rawValues = pointsData.map((p) => p.value);
+  const smoothed = whittakerSmooth(rawValues, smoothLambda);
+  return pointsData.map((p, i) => ({
+    time: p.time,
+    value: smoothed[i],
+    raw: p.value,
+  }));
+}
+
 /**
- * Chart rules:
- * - Y-axis auto-zooms to data min/max with a small margin
- * - Negative values are omitted
- * - Plotted curve uses Whittaker λ-smoothing (display only)
- * - Tooltip shows raw reading + time on hover/touch
- * - X positions by real timestamp; time labels thinned to avoid overlap
+ * @param {Array<{id:number,label:string,readings:array}>} [series]
+ * @param {array} [readings] single-series fallback
  */
 export function TempChart({
   readings,
+  series,
   unit = "F",
   width = 320,
   height = 72,
@@ -196,38 +206,41 @@ export function TempChart({
   const [tip, setTip] = useState(null);
 
   const model = useMemo(() => {
-    if (!readings?.length) return null;
+    const inputSeries =
+      series?.length > 0
+        ? series
+        : readings?.length
+          ? [{ id: 0, label: "", readings }]
+          : [];
 
-    const pointsData = readings
-      .map((r) => ({
-        time: new Date(r.recordedAt).getTime(),
-        value: toDisplay(r.celsius, unit),
-      }))
-      .filter(
-        (p) =>
-          Number.isFinite(p.time) && Number.isFinite(p.value) && p.value >= 0
-      )
-      .sort((a, b) => a.time - b.time);
+    const built = inputSeries
+      .map((s, index) => {
+        const plotPoints = buildSeriesPoints(s.readings || [], unit, smoothLambda);
+        if (!plotPoints) return null;
+        const colors = SERIES_COLORS[index % SERIES_COLORS.length];
+        return {
+          id: s.id,
+          label: s.label || `Ch ${s.id}`,
+          plotPoints,
+          colors,
+        };
+      })
+      .filter(Boolean);
 
-    if (!pointsData.length) return null;
+    if (!built.length) return null;
 
-    const rawValues = pointsData.map((p) => p.value);
-    const smoothed = whittakerSmooth(rawValues, smoothLambda);
-    const plotPoints = pointsData.map((p, i) => ({
-      time: p.time,
-      value: smoothed[i],
-      raw: p.value,
-    }));
-
-    const curveValues = plotPoints.map((p) => p.value);
-    const dataMin = Math.min(...curveValues, ...rawValues);
-    const dataMax = Math.max(...curveValues, ...rawValues);
+    const allValues = built.flatMap((s) =>
+      s.plotPoints.flatMap((p) => [p.value, p.raw])
+    );
+    const dataMin = Math.min(...allValues);
+    const dataMax = Math.max(...allValues);
     const { yMin, yMax, tempStep } = niceTempDomain(dataMin, dataMax);
     const span = Math.max(yMax - yMin, 1e-6);
     const tempTicks = buildTempTicks(yMin, yMax, tempStep);
 
-    const tMin = plotPoints[0].time;
-    const tMax = plotPoints[plotPoints.length - 1].time;
+    const allTimes = built.flatMap((s) => s.plotPoints.map((p) => p.time));
+    const tMin = Math.min(...allTimes);
+    const tMax = Math.max(...allTimes);
     const timeSpan = Math.max(tMax - tMin, 1);
 
     return {
@@ -235,23 +248,16 @@ export function TempChart({
       yMax,
       span,
       tempTicks,
-      plotPoints,
+      series: built,
       tMin,
       tMax,
       timeSpan,
     };
-  }, [readings, unit, smoothLambda]);
+  }, [readings, series, unit, smoothLambda]);
 
   if (!model) return null;
 
-  const {
-    yMin,
-    span,
-    tempTicks,
-    plotPoints,
-    tMin,
-    timeSpan,
-  } = model;
+  const { yMin, span, tempTicks, series: plotSeries, tMin, timeSpan } = model;
 
   const showAxis = height > 120;
   const padX = showAxis ? 48 : 16;
@@ -267,10 +273,6 @@ export function TempChart({
   const timeTicks = showAxis
     ? buildTimeTicks(tMin, model.tMax, stepMinutes, xAtTime, 64)
     : [];
-
-  const points = plotPoints
-    .map((p) => `${xAtTime(p.time)},${yAt(p.value)}`)
-    .join(" ");
 
   const stroke = showAxis ? 3.5 : 2.5;
   const glow = showAxis ? 10 : 6;
@@ -290,12 +292,20 @@ export function TempChart({
   function nearestPoint(svgX) {
     let best = null;
     let bestDist = Infinity;
-    for (let i = 0; i < plotPoints.length; i++) {
-      const px = xAtTime(plotPoints[i].time);
-      const d = Math.abs(px - svgX);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { ...plotPoints[i], index: i, px, py: yAt(plotPoints[i].value) };
+    for (const s of plotSeries) {
+      for (const p of s.plotPoints) {
+        const px = xAtTime(p.time);
+        const d = Math.abs(px - svgX);
+        if (d < bestDist) {
+          bestDist = d;
+          best = {
+            ...p,
+            px,
+            py: yAt(p.value),
+            label: s.label,
+            color: s.colors.dot,
+          };
+        }
       }
     }
     return best;
@@ -306,15 +316,15 @@ export function TempChart({
     if (!coords) return;
     const hit = nearestPoint(coords.x);
     if (!hit) return;
-    const leftPct = (hit.px / width) * 100;
-    const topPct = (hit.py / height) * 100;
     setTip({
-      leftPct,
-      topPct,
+      leftPct: (hit.px / width) * 100,
+      topPct: (hit.py / height) * 100,
       timeLabel: formatHm(new Date(hit.time)),
       tempLabel: `${hit.raw.toFixed(1)}°${unit}`,
+      seriesLabel: hit.label,
       px: hit.px,
       py: hit.py,
+      color: hit.color,
     });
   }
 
@@ -372,22 +382,31 @@ export function TempChart({
             strokeWidth="1"
           />
         )}
-        <polyline
-          fill="none"
-          stroke="rgba(255,180,120,0.22)"
-          strokeWidth={glow}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          points={points}
-        />
-        <polyline
-          fill="none"
-          stroke="rgba(255,106,26,0.95)"
-          strokeWidth={stroke}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          points={points}
-        />
+        {plotSeries.map((s) => {
+          const points = s.plotPoints
+            .map((p) => `${xAtTime(p.time)},${yAt(p.value)}`)
+            .join(" ");
+          return (
+            <g key={`series-${s.id}`}>
+              <polyline
+                fill="none"
+                stroke={s.colors.glow}
+                strokeWidth={glow}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                points={points}
+              />
+              <polyline
+                fill="none"
+                stroke={s.colors.stroke}
+                strokeWidth={stroke}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                points={points}
+              />
+            </g>
+          );
+        })}
         {tip && (
           <g className="chart-crosshair">
             <line
@@ -403,7 +422,7 @@ export function TempChart({
               cx={tip.px}
               cy={tip.py}
               r="6"
-              fill="#ff6a1a"
+              fill={tip.color || "#ff6a1a"}
               stroke="#fff8f1"
               strokeWidth="2"
             />
@@ -427,6 +446,9 @@ export function TempChart({
           className={`chart-tooltip ${tip.leftPct > 70 ? "flip" : ""}`}
           style={{ left: `${tip.leftPct}%`, top: `${tip.topPct}%` }}
         >
+          {tip.seriesLabel ? (
+            <div className="chart-tooltip-series">{tip.seriesLabel}</div>
+          ) : null}
           <div className="chart-tooltip-temp">{tip.tempLabel}</div>
           <div className="chart-tooltip-time">{tip.timeLabel}</div>
         </div>

@@ -74,5 +74,6 @@ On the Pi, [`deploy/webaeger.service`](deploy/webaeger.service) sets production 
 | `TEMP_UNIT`| `F`                  | `C` or `F`                     |
 | `DB_PATH`  | `data/grillmaster.db`| SQLite file                    |
 | `I2C_BUS`  | `1`                  | Pi I2C bus                     |
-| `RTD_ADDR` | `0x66`               | EZO-RTD default                |
+| `RTD_ADDRS` | `0x66`             | Comma-separated EZO I2C addrs  |
+| `PROBE_LABELS` | `Pit,Meat`       | Channel toggle labels          |
 | `PUBLIC_URL` | _(auto LAN IP)_    | Phone QR target URL            |

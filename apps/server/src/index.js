@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { WebSocketServer } from "ws";
 import {
-  createSensor,
+  createProbeChannels,
   celsiusToFahrenheit,
 } from "@grill-master/sensor";
 import { openDatabase, createCookStore } from "./db.js";
@@ -21,18 +21,29 @@ const PUBLIC_URL = resolvePublicUrl(PORT);
 
 const db = openDatabase();
 const cooks = createCookStore(db);
-const sensor = createSensor({ mode: process.env.SENSOR || "mock" });
+const probes = createProbeChannels({ mode: process.env.SENSOR || "mock" });
 
 const app = express();
 app.use(express.json());
 
-let latest = {
-  celsius: null,
-  fahrenheit: null,
-  recordedAt: null,
-  error: null,
-  unit: UNIT,
-};
+const probeMeta = probes.map(({ id, label }) => ({ id, label }));
+
+/** @type {Record<number, object>} */
+let channels = Object.fromEntries(
+  probes.map(({ id }) => [
+    id,
+    {
+      id,
+      label: probes[id].label,
+      celsius: null,
+      fahrenheit: null,
+      display: null,
+      recordedAt: null,
+      error: null,
+      unit: UNIT,
+    },
+  ])
+);
 
 function serializeCook(cook) {
   if (!cook) return null;
@@ -62,18 +73,35 @@ function readingPayload(celsius, recordedAt = new Date().toISOString()) {
   };
 }
 
+function latestSnapshot() {
+  const list = probeMeta.map((p) => channels[p.id]);
+  const primary = list[0] || null;
+  return {
+    unit: UNIT,
+    probes: probeMeta,
+    channels: list,
+    // Back-compat single-channel fields (first probe)
+    celsius: primary?.celsius ?? null,
+    fahrenheit: primary?.fahrenheit ?? null,
+    display: primary?.display ?? null,
+    recordedAt: primary?.recordedAt ?? null,
+    error: primary?.error ?? null,
+  };
+}
+
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
     sensor: process.env.SENSOR || "mock",
     unit: UNIT,
     publicUrl: PUBLIC_URL,
+    probes: probeMeta,
   });
 });
 
 app.get("/api/temp", (_req, res) => {
   res.json({
-    ...latest,
+    ...latestSnapshot(),
     activeCook: serializeCook(cooks.getActiveCook()),
   });
 });
@@ -91,13 +119,26 @@ app.get("/api/cooks/:id", (req, res) => {
     res.status(404).json({ error: "Cook not found" });
     return;
   }
-  const readings = cooks.getReadings(cook.id).map((r) => ({
+  const channelParam = req.query.channel;
+  const wantAll =
+    channelParam === undefined ||
+    channelParam === "" ||
+    channelParam === "all";
+  const rows = wantAll
+    ? cooks.getAllReadings(cook.id)
+    : cooks.getReadings(cook.id, Number(channelParam));
+  const readings = rows.map((r) => ({
     id: r.id,
+    channel: r.channel ?? 0,
     recordedAt: r.recorded_at,
     celsius: r.celsius,
     fahrenheit: celsiusToFahrenheit(r.celsius),
   }));
-  res.json({ cook: serializeCook(cook), readings });
+  res.json({
+    cook: serializeCook(cook),
+    channel: wantAll ? "all" : Number(channelParam),
+    readings,
+  });
 });
 
 app.post("/api/cooks", (req, res) => {
@@ -133,10 +174,8 @@ app.get("*", (req, res, next) => {
         .type("html")
         .send(
           `<!doctype html><html><body style="font-family:sans-serif;padding:2rem">
-           <h1>Grill Master</h1>
-           <p>Web UI not built yet. Run <code>npm run build -w @grill-master/web</code>
-           or open the Vite dev server on port 5173.</p>
-           <p>API is up at <a href="/api/temp">/api/temp</a>.</p>
+           <h1>Traeger</h1>
+           <p>Web UI not built yet. Run <code>npm run build -w @grill-master/web</code>.</p>
            </body></html>`
         );
     }
@@ -157,52 +196,64 @@ wss.on("connection", (socket) => {
   socket.send(
     JSON.stringify({
       type: "hello",
-      latest,
+      ...latestSnapshot(),
       activeCook: serializeCook(cooks.getActiveCook()),
     })
   );
 });
 
-async function pollSensor() {
-  try {
-    const celsius = await sensor.readCelsius();
-    const reading = readingPayload(celsius);
-    latest = { ...reading, error: null };
+async function pollSensors() {
+  const active = cooks.getActiveCook();
+  let lastStoredId = null;
 
-    const active = cooks.getActiveCook();
-    let stored = null;
-    if (active) {
-      stored = cooks.addReading(active.id, celsius);
-    }
+  await Promise.all(
+    probes.map(async ({ id, label, sensor }) => {
+      try {
+        const celsius = await sensor.readCelsius();
+        const reading = readingPayload(celsius);
+        channels[id] = {
+          id,
+          label,
+          ...reading,
+          error: null,
+        };
+        if (active) {
+          const stored = cooks.addReading(active.id, celsius, id);
+          lastStoredId = stored.id;
+        }
+      } catch (err) {
+        channels[id] = {
+          ...channels[id],
+          id,
+          label,
+          error: err.message || String(err),
+          recordedAt: new Date().toISOString(),
+          unit: UNIT,
+        };
+      }
+    })
+  );
 
-    broadcast({
-      type: "temp",
-      ...latest,
-      activeCook: serializeCook(active),
-      readingId: stored?.id ?? null,
-    });
-  } catch (err) {
-    latest = {
-      ...latest,
-      error: err.message || String(err),
-      recordedAt: new Date().toISOString(),
-    };
-    broadcast({ type: "temp", ...latest, activeCook: serializeCook(cooks.getActiveCook()) });
-  }
+  broadcast({
+    type: "temp",
+    ...latestSnapshot(),
+    activeCook: serializeCook(active),
+    readingId: lastStoredId,
+  });
 }
 
-const pollTimer = setInterval(pollSensor, POLL_MS);
-pollSensor();
+const pollTimer = setInterval(pollSensors, POLL_MS);
+pollSensors();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `Grill Master listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"}, PUBLIC_URL=${PUBLIC_URL})`
+    `Traeger listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"}, probes=${probeMeta.map((p) => p.label).join("|")}, PUBLIC_URL=${PUBLIC_URL})`
   );
 });
 
 async function shutdown() {
   clearInterval(pollTimer);
-  await sensor.close();
+  await Promise.all(probes.map((p) => p.sensor.close()));
   db.close();
   server.close();
   process.exit(0);

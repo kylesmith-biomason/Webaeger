@@ -36,6 +36,8 @@ export function useGrillSocket() {
               error: msg.error ?? null,
               activeCook: msg.activeCook ?? null,
               readingId: msg.readingId ?? null,
+              probes: msg.probes ?? [],
+              channels: msg.channels ?? [],
             });
           }
           if (msg.type === "cook") {
