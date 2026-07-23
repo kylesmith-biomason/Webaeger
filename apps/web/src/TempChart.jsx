@@ -87,10 +87,10 @@ function buildTimeTicks(tMin, tMax, stepMinutes, xAtTime, minPxGap = 64) {
   return kept;
 }
 
-/** Even ° steps (10/20/25/50/100) aiming for about 5–8 labels from 0 → max. */
-function chooseTempStep(maxValue) {
-  const rough = Math.max(maxValue, 1) / 6;
-  const candidates = [5, 10, 20, 25, 50, 100];
+/** Even ° steps aiming for about 5 labels across the zoomed range. */
+function chooseTempStep(range) {
+  const rough = Math.max(range, 1) / 5;
+  const candidates = [1, 2, 5, 10, 15, 20, 25, 50, 100];
   for (const step of candidates) {
     if (step >= rough) return step;
   }
@@ -99,13 +99,33 @@ function chooseTempStep(maxValue) {
 
 function buildTempTicks(yMin, yMax, step) {
   const ticks = [];
-  for (let v = yMin; v <= yMax + 1e-9; v += step) {
+  const start = Math.ceil(yMin / step - 1e-9) * step;
+  for (let v = start; v <= yMax + 1e-9; v += step) {
     ticks.push(Number(v.toFixed(4)));
   }
-  if (ticks[ticks.length - 1] !== yMax) {
-    ticks.push(yMax);
+  if (!ticks.length || ticks[0] !== yMin) {
+    ticks.unshift(Number(yMin.toFixed(4)));
   }
-  return ticks;
+  if (ticks[ticks.length - 1] !== yMax) {
+    ticks.push(Number(yMax.toFixed(4)));
+  }
+  // Dedupe near-duplicates from float noise
+  return ticks.filter(
+    (v, i, arr) => i === 0 || Math.abs(v - arr[i - 1]) > step * 0.01
+  );
+}
+
+/** Zoom Y domain to data with ~8% margin, snapped to nice tick steps. */
+function niceTempDomain(dataMin, dataMax) {
+  const span = Math.max(dataMax - dataMin, 1);
+  const margin = Math.max(span * 0.08, 2);
+  let lo = dataMin - margin;
+  let hi = dataMax + margin;
+  const step = chooseTempStep(hi - lo);
+  lo = Math.floor(lo / step) * step;
+  hi = Math.ceil(hi / step) * step;
+  if (hi <= lo) hi = lo + step;
+  return { yMin: lo, yMax: hi, tempStep: step };
 }
 
 /**
@@ -159,7 +179,7 @@ const SMOOTH_LAMBDA = 40;
 
 /**
  * Chart rules:
- * - Y-axis floor at 0; even temp ticks + faint horizontal grid
+ * - Y-axis auto-zooms to data min/max with a small margin
  * - Negative values are omitted
  * - Plotted curve uses Whittaker λ-smoothing (display only)
  * - Tooltip shows raw reading + time on hover/touch
@@ -178,7 +198,6 @@ export function TempChart({
   const model = useMemo(() => {
     if (!readings?.length) return null;
 
-    const yMin = 0;
     const pointsData = readings
       .map((r) => ({
         time: new Date(r.recordedAt).getTime(),
@@ -196,15 +215,15 @@ export function TempChart({
     const smoothed = whittakerSmooth(rawValues, smoothLambda);
     const plotPoints = pointsData.map((p, i) => ({
       time: p.time,
-      value: Math.max(0, smoothed[i]),
+      value: smoothed[i],
       raw: p.value,
     }));
 
-    const values = plotPoints.map((p) => p.value);
-    const dataMax = Math.max(...values, ...rawValues);
-    const tempStep = chooseTempStep(Math.max(dataMax, 50));
-    const yMax = Math.max(Math.ceil(dataMax / tempStep) * tempStep, tempStep);
-    const span = Math.max(yMax - yMin, 1);
+    const curveValues = plotPoints.map((p) => p.value);
+    const dataMin = Math.min(...curveValues, ...rawValues);
+    const dataMax = Math.max(...curveValues, ...rawValues);
+    const { yMin, yMax, tempStep } = niceTempDomain(dataMin, dataMax);
+    const span = Math.max(yMax - yMin, 1e-6);
     const tempTicks = buildTempTicks(yMin, yMax, tempStep);
 
     const tMin = plotPoints[0].time;
