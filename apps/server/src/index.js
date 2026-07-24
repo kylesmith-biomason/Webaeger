@@ -15,7 +15,10 @@ loadProjectEnv();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const POLL_MS = Number(process.env.POLL_MS || 30000);
+/** Live UI / WebSocket update interval */
+const POLL_MS = Number(process.env.POLL_MS || 4000);
+/** How often to persist readings for the graph while a cook is active */
+const RECORD_MS = Number(process.env.RECORD_MS || 60000);
 const UNIT = (process.env.TEMP_UNIT || "F").toUpperCase();
 const PUBLIC_URL = resolvePublicUrl(PORT);
 
@@ -202,9 +205,25 @@ wss.on("connection", (socket) => {
   );
 });
 
+/** Last DB write time / id — live polls do not change these */
+let lastGraphRecordAt = 0;
+let lastRecordCookId = null;
+let lastStoredId = null;
+
 async function pollSensors() {
   const active = cooks.getActiveCook();
-  let lastStoredId = null;
+  const now = Date.now();
+
+  if (!active) {
+    lastGraphRecordAt = 0;
+    lastRecordCookId = null;
+  }
+
+  const shouldRecord =
+    Boolean(active) &&
+    (active.id !== lastRecordCookId || now - lastGraphRecordAt >= RECORD_MS);
+
+  let recordedThisPoll = false;
 
   await Promise.all(
     probes.map(async ({ id, label, sensor }) => {
@@ -217,9 +236,10 @@ async function pollSensors() {
           ...reading,
           error: null,
         };
-        if (active) {
+        if (shouldRecord) {
           const stored = cooks.addReading(active.id, celsius, id);
           lastStoredId = stored.id;
+          recordedThisPoll = true;
         }
       } catch (err) {
         channels[id] = {
@@ -234,10 +254,16 @@ async function pollSensors() {
     })
   );
 
+  if (recordedThisPoll) {
+    lastGraphRecordAt = now;
+    lastRecordCookId = active.id;
+  }
+
   broadcast({
     type: "temp",
     ...latestSnapshot(),
     activeCook: serializeCook(active),
+    // Stable across live-only polls so the UI does not refetch graph history every tick
     readingId: lastStoredId,
   });
 }
@@ -247,7 +273,7 @@ pollSensors();
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(
-    `Traeger listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"}, probes=${probeMeta.map((p) => p.label).join("|")}, PUBLIC_URL=${PUBLIC_URL})`
+    `Traeger listening on http://0.0.0.0:${PORT} (SENSOR=${process.env.SENSOR || "mock"}, POLL_MS=${POLL_MS}, RECORD_MS=${RECORD_MS}, probes=${probeMeta.map((p) => p.label).join("|")}, PUBLIC_URL=${PUBLIC_URL})`
   );
 });
 

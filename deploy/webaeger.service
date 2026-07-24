@@ -9,7 +9,8 @@ WorkingDirectory=/opt/Webaeger
 Environment=NODE_ENV=production
 Environment=SENSOR=rtd
 Environment=PORT=3000
-Environment=POLL_MS=30000
+Environment=POLL_MS=4000
+Environment=RECORD_MS=60000
 Environment=TEMP_UNIT=F
 Environment=DB_PATH=/opt/Webaeger/data/grillmaster.db
 # Optional: force QR / phone URL (otherwise auto-detects LAN IP)

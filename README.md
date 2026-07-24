@@ -70,7 +70,8 @@ On the Pi, [`deploy/webaeger.service`](deploy/webaeger.service) sets production 
 |------------|----------------------|--------------------------------|
 | `SENSOR`   | `mock`               | `rtd` on the Pi                |
 | `PORT`     | `3000`               | HTTP + WebSocket               |
-| `POLL_MS`  | `30000`              | Sensor poll interval (30s)     |
+| `POLL_MS`  | `4000`               | Live sensor / UI poll (4s)     |
+| `RECORD_MS`| `60000`              | Graph DB sample interval (60s) |
 | `TEMP_UNIT`| `F`                  | `C` or `F`                     |
 | `DB_PATH`  | `data/grillmaster.db`| SQLite file                    |
 | `I2C_BUS`  | `1`                  | Pi I2C bus                     |
